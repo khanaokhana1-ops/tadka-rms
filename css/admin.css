@@ -1,0 +1,35 @@
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, sans-serif;
+  background: #F2ECE0;
+  color: #1F1B18;
+  margin: 0;
+  padding: 20px;
+}
+.wrap { max-width: 480px; margin: 0 auto; }
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 24px;
+}
+.topbar h1 { font-size: 20px; margin: 0; }
+.card {
+  background: white; border: 1px solid #E4DBC9; border-radius: 10px;
+  padding: 20px; margin-bottom: 16px;
+}
+label { display: block; font-size: 13px; font-weight: 600; color: #57534E; margin: 12px 0 4px; }
+input[type=text], input[type=email], input[type=password], input[type=number], textarea {
+  width: 100%; padding: 10px; border: 1px solid #E4DBC9; border-radius: 6px;
+  font-size: 15px; background: #FBF8F2;
+}
+textarea { resize: vertical; min-height: 60px; }
+.btn {
+  background: #E8552E; color: white; border: none; padding: 12px 20px;
+  border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; width: 100%;
+  margin-top: 16px;
+}
+.btn-secondary { background: transparent; color: #57534E; border: 1px solid #E4DBC9; width: auto; padding: 8px 16px; margin-top: 0; }
+.error { color: #C43F1D; font-size: 14px; margin-top: 10px; }
+.success { color: #3F6B4A; font-size: 14px; margin-top: 10px; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.checkbox-row input { width: auto; }
+img.preview { max-width: 100%; border-radius: 6px; margin-top: 8px; display: block; }
