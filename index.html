@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Connecting...</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body style="font-family: sans-serif; text-align:center; padding-top: 100px;">
+  <h1 id="name">Connecting to your database...</h1>
+  <p id="status"></p>
+  <script src="js/supabase-config.js"></script>
+  <script>
+    async function loadRestaurant() {
+      const { data, error } = await supabaseClient.from('restaurant').select('*').eq('id', 1).single();
+      if (error) {
+        document.getElementById('name').textContent = "Connection failed ❌";
+        document.getElementById('status').textContent = error.message;
+        return;
+      }
+      document.getElementById('name').textContent = data.name;
+      document.getElementById('status').textContent = data.is_open ? "We're open! ✅" : "Currently closed";
+    }
+    loadRestaurant();
+  </script>
+</body>
+</html>
