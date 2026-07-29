@@ -1,4 +1,5 @@
-const SUPABASE_URL = "https://supabase.com/dashboard/project/oxblgsaucwalabyutqmm/settings/api-keys";
+
+const SUPABASE_URL = "https://oxblgsaucwalabyutqmm.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94Ymxnc2F1Y3dhbGFieXV0cW1tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzMjIxMjMsImV4cCI6MjEwMDg5ODEyM30.nYA3H8NDRnWB70sDJYikPZWcOhxmVpOizEaRV48sZ-M";
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
