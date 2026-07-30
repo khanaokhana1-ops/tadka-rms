@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Offers</title>
+  <link rel="stylesheet" href="../css/admin.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .offer-row { padding:12px 0; border-bottom:1px solid #E4DBC9; }
+    .offer-row:last-child { border-bottom:none; }
+    .offer-top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .offer-code { font-family:monospace; font-weight:700; background:#F2ECE0; padding:2px 8px; border-radius:4px; display:inline-block; margin-top:4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <script src="../js/admin-nav.js"></script>
+    <div class="topbar">
+      <h1>Offers</h1>
+      <button class="btn btn-secondary" onclick="logout()">Log out</button>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Add an offer</h3>
+      <label>Title</label>
+      <input type="text" id="new_title" placeholder="e.g. Flat 20% off on first order">
+      <label>Description</label>
+      <textarea id="new_desc" placeholder="e.g. Valid on orders above ₹299"></textarea>
+      <label>Promo code (optional)</label>
+      <input type="text" id="new_code" placeholder="e.g. WELCOME20">
+      <label>Discount percent (optional)</label>
+      <input type="number" id="new_discount" placeholder="e.g. 20">
+      <label>Valid until (optional)</label>
+      <input type="date" id="new_valid_until">
+      <button class="btn" onclick="addOffer()">Add offer</button>
+      <p class="error" id="add_error"></p>
+      <p class="success" id="add_success" style="display:none;">Offer added!</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">All offers</h3>
+      <div id="list">Loading…</div>
+    </div>
+  </div>
+
+  <script src="../js/supabase-config.js"></script>
+  <script src="../js/admin-auth.js"></script>
+  <script>
+    let offers = [];
+
+    async function loadAll() {
+      await requireAuth();
+      const { data, error } = await supabaseClient.from('offers').select('*').order('created_at', { ascending: false });
+      if (error) { document.getElementById('add_error').textContent = error.message; return; }
+      offers = data || [];
+      render();
+    }
+
+    function render() {
+      const el = document.getElementById('list');
+      if (offers.length === 0) {
+        el.innerHTML = '<p style="color:#8A837A; font-size:14px;">No offers yet.</p>';
+        return;
+      }
+      el.innerHTML = offers.map(o => `
+        <div class="offer-row">
+          <div class="offer-top">
+            <strong>${o.title}</strong>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-secondary" onclick="toggleActive('${o.id}', ${o.is_active})">${o.is_active ? 'Live' : 'Hidden'}</button>
+              <button class="btn btn-secondary" onclick="deleteOffer('${o.id}')">Delete</button>
+            </div>
+          </div>
+          ${o.description ? `<p style="font-size:13px; color:#57534E; margin:4px 0;">${o.description}</p>` : ''}
+          ${o.code ? `<span class="offer-code">${o.code}</span>` : ''}
+          ${o.valid_until ? `<p style="font-size:12px; color:#8A837A; margin-top:4px;">Valid until ${o.valid_until}</p>` : ''}
+        </div>
+      `).join('');
+    }
+
+    async function addOffer() {
+      document.getElementById('add_error').textContent = '';
+      document.getElementById('add_success').style.display = 'none';
+      const title = document.getElementById('new_title').value.trim();
+      if (!title) { document.getElementById('add_error').textContent = 'Title is required.'; return; }
+
+      const { error } = await supabaseClient.from('offers').insert({
+        title,
+        description: document.getElementById('new_desc').value,
+        code: document.getElementById('new_code').value || null,
+        discount_percent: document.getElementById('new_discount').value ? Number(document.getElementById('new_discount').value) : null,
+        valid_until: document.getElementById('new_valid_until').value || null,
+        is_active: true,
+      });
+      if (error) { document.getElementById('add_error').textContent = error.message; return; }
+
+      document.getElementById('new_title').value = '';
+      document.getElementById('new_desc').value = '';
+      document.getElementById('new_code').value = '';
+      document.getElementById('new_discount').value = '';
+      document.getElementById('new_valid_until').value = '';
+      document.getElementById('add_success').style.display = 'block';
+      loadAll();
+    }
+
+    async function toggleActive(id, current) {
+      await supabaseClient.from('offers').update({ is_active: !current }).eq('id', id);
+      loadAll();
+    }
+
+    async function deleteOffer(id) {
+      if (!confirm('Delete this offer?')) return;
+      await supabaseClient.from('offers').delete().eq('id', id);
+      loadAll();
+    }
+
+    loadAll();
+  </script>
+</body>
+</html>
