@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Banners</title>
+  <link rel="stylesheet" href="../css/admin.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .banner-row { display:flex; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid #E4DBC9; }
+    .banner-row:last-child { border-bottom:none; }
+    .banner-thumb { width:80px; height:48px; border-radius:6px; object-fit:cover; background:#F2ECE0; flex-shrink:0; }
+    .grow { flex:1; min-width:0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <script src="../js/admin-nav.js"></script>
+    <div class="topbar">
+      <h1>Banners</h1>
+      <button class="btn btn-secondary" onclick="logout()">Log out</button>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Add a banner</h3>
+      <label>Title</label>
+      <input type="text" id="new_title" placeholder="e.g. Weekend Biryani Special">
+      <label>Subtitle</label>
+      <input type="text" id="new_subtitle" placeholder="e.g. Flat 20% off, this weekend only">
+      <label>Image</label>
+      <input type="file" id="new_photo" accept="image/*">
+      <button class="btn" onclick="addBanner()">Add banner</button>
+      <p class="error" id="add_error"></p>
+      <p class="success" id="add_success" style="display:none;">Banner added!</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">All banners</h3>
+      <div id="list">Loading…</div>
+    </div>
+  </div>
+
+  <script src="../js/supabase-config.js"></script>
+  <script src="../js/admin-auth.js"></script>
+  <script>
+    let banners = [];
+
+    async function loadAll() {
+      await requireAuth();
+      const { data, error } = await supabaseClient.from('banners').select('*').order('sort_order');
+      if (error) { document.getElementById('add_error').textContent = error.message; return; }
+      banners = data || [];
+      render();
+    }
+
+    function render() {
+      const el = document.getElementById('list');
+      if (banners.length === 0) {
+        el.innerHTML = '<p style="color:#8A837A; font-size:14px;">No banners yet.</p>';
+        return;
+      }
+      el.innerHTML = banners.map(b => `
+        <div class="banner-row">
+          <img class="banner-thumb" src="${b.image_url || ''}" onerror="this.style.opacity=0">
+          <div class="grow">
+            <input type="text" value="${b.title || ''}" placeholder="Title" onblur="updateField('${b.id}','title',this.value)">
+          </div>
+          <button class="btn btn-secondary" onclick="toggleActive('${b.id}', ${b.is_active})">${b.is_active ? 'Live' : 'Hidden'}</button>
+          <button class="btn btn-secondary" onclick="deleteBanner('${b.id}')">Delete</button>
+        </div>
+      `).join('');
+    }
+
+    async function addBanner() {
+      document.getElementById('add_error').textContent = '';
+      document.getElementById('add_success').style.display = 'none';
+      const file = document.getElementById('new_photo').files[0];
+      if (!file) { document.getElementById('add_error').textContent = 'Please choose an image.'; return; }
+
+      const fileName = `banner-${Date.now()}-${file.name}`;
+      const { error: upErr } = await supabaseClient.storage.from('images').upload(fileName, file, { upsert: true });
+      if (upErr) { document.getElementById('add_error').textContent = 'Upload failed: ' + upErr.message; return; }
+      const { data: urlData } = supabaseClient.storage.from('images').getPublicUrl(fileName);
+
+      const { error } = await supabaseClient.from('banners').insert({
+        title: document.getElementById('new_title').value,
+        subtitle: document.getElementById('new_subtitle').value,
+        image_url: urlData.publicUrl,
+        is_active: true,
+        sort_order: banners.length,
+      });
+      if (error) { document.getElementById('add_error').textContent = error.message; return; }
+
+      document.getElementById('new_title').value = '';
+      document.getElementById('new_subtitle').value = '';
+      document.getElementById('new_photo').value = '';
+      document.getElementById('add_success').style.display = 'block';
+      loadAll();
+    }
+
+    async function updateField(id, field, value) {
+      const patch = {};
+      patch[field] = value;
+      await supabaseClient.from('banners').update(patch).eq('id', id);
+    }
+
+    async function toggleActive(id, current) {
+      await supabaseClient.from('banners').update({ is_active: !current }).eq('id', id);
+      loadAll();
+    }
+
+    async function deleteBanner(id) {
+      if (!confirm('Delete this banner?')) return;
+      await supabaseClient.from('banners').delete().eq('id', id);
+      loadAll();
+    }
+
+    loadAll();
+  </script>
+</body>
+</html>
