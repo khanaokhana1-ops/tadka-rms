@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Menu & Categories</title>
+  <link rel="stylesheet" href="../css/admin.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .item-row { display:flex; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid #E4DBC9; }
+    .item-row:last-child { border-bottom:none; }
+    .thumb { width:48px; height:48px; border-radius:6px; object-fit:cover; background:#F2ECE0; flex-shrink:0; }
+    .item-row input[type=text], .item-row input[type=number] { padding:6px 8px; font-size:13px; }
+    .grow { flex:1; min-width:0; }
+    .small-file { font-size:11px; }
+    .cat-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #E4DBC9; }
+    .veg-tag { font-size:11px; font-weight:700; padding:2px 6px; border-radius:4px; }
+    .veg-tag.veg { color:#2F7D3C; background:#2F7D3C1A; }
+    .veg-tag.nonveg { color:#9C3B2E; background:#9C3B2E1A; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <script src="../js/admin-nav.js"></script>
+    <div class="topbar">
+      <h1>Menu & Categories</h1>
+      <button class="btn btn-secondary" onclick="logout()">Log out</button>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Categories</h3>
+      <div id="cat_list"></div>
+      <label>New category name</label>
+      <input type="text" id="new_cat_name" placeholder="e.g. Starters">
+      <button class="btn" onclick="addCategory()">Add category</button>
+      <p class="error" id="cat_error"></p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Add a menu item</h3>
+      <label>Category</label>
+      <select id="new_item_cat"></select>
+      <label>Item name</label>
+      <input type="text" id="new_item_name">
+      <label>Description</label>
+      <textarea id="new_item_desc"></textarea>
+      <label>Price (₹)</label>
+      <input type="number" id="new_item_price">
+      <label>Type</label>
+      <select id="new_item_veg">
+        <option value="true">Vegetarian</option>
+        <option value="false">Non-vegetarian</option>
+      </select>
+      <label>Photo</label>
+      <input type="file" id="new_item_photo" accept="image/*">
+      <button class="btn" onclick="addMenuItem()">Add item</button>
+      <p class="error" id="item_error"></p>
+      <p class="success" id="item_success" style="display:none;">Item added!</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">All menu items</h3>
+      <div id="items_list">Loading…</div>
+    </div>
+  </div>
+
+  <script src="../js/supabase-config.js"></script>
+  <script src="../js/admin-auth.js"></script>
+  <script>
+    let categories = [];
+    let items = [];
+
+    async function loadAll() {
+      await requireAuth();
+      const [{ data: cats, error: catErr }, { data: menu, error: menuErr }] = await Promise.all([
+        supabaseClient.from('categories').select('*').order('sort_order'),
+        supabaseClient.from('menu_items').select('*').order('sort_order'),
+      ]);
+      if (catErr) { document.getElementById('cat_error').textContent = catErr.message; return; }
+      if (menuErr) { document.getElementById('item_error').textContent = menuErr.message; return; }
+      categories = cats || [];
+      items = menu || [];
+      renderCategories();
+      renderItemForm();
+      renderItems();
+    }
+
+    function renderCategories() {
+      const el = document.getElementById('cat_list');
+      if (categories.length === 0) {
+        el.innerHTML = '<p style="color:#8A837A; font-size:14px;">No categories yet — add one below.</p>';
+        return;
+      }
+      el.innerHTML = categories.map(c => `
+        <div class="cat-row">
+          <span>${c.name}</span>
+          <button class="btn btn-secondary" onclick="deleteCategory('${c.id}')">Delete</button>
+        </div>
+      `).join('');
+    }
+
+    function renderItemForm() {
+      const sel = document.getElementById('new_item_cat');
+      sel.innerHTML = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    }
+
+    function renderItems() {
+      const el = document.getElementById('items_list');
+      if (items.length === 0) {
+        el.innerHTML = '<p style="color:#8A837A; font-size:14px;">No items yet.</p>';
+        return;
+      }
+      const grouped = categories.map(c => ({ cat: c, list: items.filter(i => i.category_id === c.id) }));
+      const uncategorized = items.filter(i => !i.category_id);
+
+      let html = '';
+      grouped.forEach(g => {
+        if (g.list.length === 0) return;
+        html += `<h4 style="margin-bottom:4px;">${g.cat.name}</h4>`;
+        html += g.list.map(renderItemRow).join('');
+      });
+      if (uncategorized.length > 0) {
+        html += `<h4 style="margin-bottom:4px;">Uncategorized</h4>`;
+        html += uncategorized.map(renderItemRow).join('');
+      }
+      el.innerHTML = html;
+    }
+
+    function renderItemRow(item) {
+      return `
+        <div class="item-row">
+          <img class="thumb" src="${item.image_url || ''}" onerror="this.style.opacity=0">
+          <div class="grow">
+            <input type="text" value="${item.name}" onblur="updateItemField('${item.id}','name',this.value)">
+            <div style="display:flex; gap:6px; align-items:center; margin-top:4px;">
+              <input type="number" value="${item.price}" style="width:70px;" onblur="updateItemField('${item.id}','price',Number(this.value))">
+              <span class="veg-tag ${item.is_veg ? 'veg' : 'nonveg'}">${item.is_veg ? 'Veg' : 'Non-veg'}</span>
+              <input type="file" class="small-file" accept="image/*" onchange="uploadItemImage('${item.id}', this)">
+            </div>
+          </div>
+          <button class="btn btn-secondary" onclick="toggleAvailable('${item.id}', ${item.is_available})">${item.is_available ? 'Available' : 'Sold out'}</button>
+          <button class="btn btn-secondary" onclick="deleteItem('${item.id}')">Delete</button>
+        </div>
+      `;
+    }
+
+    async function addCategory() {
+      const name = document.getElementById('new_cat_name').value.trim();
+      if (!name) return;
+      const { error } = await supabaseClient.from('categories').insert({ name, sort_order: categories.length });
+      if (error) { document.getElementById('cat_error').textContent = error.message; return; }
+      document.getElementById('new_cat_name').value = '';
+      document.getElementById('cat_error').textContent = '';
+      loadAll();
+    }
+
+    async function deleteCategory(id) {
+      if (!confirm('Delete this category? Items in it will become uncategorized, not deleted.')) return;
+      const { error } = await supabaseClient.from('categories').delete().eq('id', id);
+      if (error) { document.getElementById('cat_error').textContent = error.message; return; }
+      loadAll();
+    }
+
+    async function addMenuItem() {
+      document.getElementById('item_error').textContent = '';
+      document.getElementById('item_success').style.display = 'none';
+      const name = document.getElementById('new_item_name').value.trim();
+      const price = Number(document.getElementById('new_item_price').value);
+      if (!name || !price) { document.getElementById('item_error').textContent = 'Name and price are required.'; return; }
+
+      let imageUrl = null;
+      const file = document.getElementById('new_item_photo').files[0];
+      if (file) {
+        const fileName = `item-${Date.now()}-${file.name}`;
+        const { error: upErr } = await supabaseClient.storage.from('images').upload(fileName, file, { upsert: true });
+        if (upErr) { document.getElementById('item_error').textContent = 'Image upload failed: ' + upErr.message; return; }
+        const { data: urlData } = supabaseClient.storage.from('images').getPublicUrl(fileName);
+        imageUrl = urlData.publicUrl;
+      }
+
+      const { error } = await supabaseClient.from('menu_items').insert({
+        category_id: document.getElementById('new_item_cat').value || null,
+        name,
+        description: document.getElementById('new_item_desc').value,
+        price,
+        is_veg: document.getElementById('new_item_veg').value === 'true',
+        image_url: imageUrl,
+        is_available: true,
+        sort_order: items.length,
+      });
+      if (error) { document.getElementById('item_error').textContent = error.message; return; }
+
+      document.getElementById('new_item_name').value = '';
+      document.getElementById('new_item_desc').value = '';
+      document.getElementById('new_item_price').value = '';
+      document.getElementById('new_item_photo').value = '';
+      document.getElementById('item_success').style.display = 'block';
+      loadAll();
+    }
+
+    async function updateItemField(id, field, value) {
+      const patch = {};
+      patch[field] = value;
+      await supabaseClient.from('menu_items').update(patch).eq('id', id);
+    }
+
+    async function toggleAvailable(id, current) {
+      await supabaseClient.from('menu_items').update({ is_available: !current }).eq('id', id);
+      loadAll();
+    }
+
+    async function deleteItem(id) {
+      if (!confirm('Delete this item permanently?')) return;
+      await supabaseClient.from('menu_items').delete().eq('id', id);
+      loadAll();
+    }
+
+    async function uploadItemImage(id, inputEl) {
+      const file = inputEl.files[0];
+      if (!file) return;
+      const fileName = `item-${Date.now()}-${file.name}`;
+      const { error: upErr } = await supabaseClient.storage.from('images').upload(fileName, file, { upsert: true });
+      if (upErr) { alert('Upload failed: ' + upErr.message); return; }
+      const { data: urlData } = supabaseClient.storage.from('images').getPublicUrl(fileName);
+      await supabaseClient.from('menu_items').update({ image_url: urlData.publicUrl }).eq('id', id);
+      loadAll();
+    }
+
+    loadAll();
+  </script>
+</body>
+</html>
