@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Menu</title>
+  <link rel="stylesheet" href="css/site.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a class="brand" href="index.html">
+      <img id="nav_logo" src="" style="display:none;">
+      <span class="brand-name" id="nav_name">Restaurant</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="menu.html" class="active">Menu</a>
+    </div>
+  </nav>
+
+  <div class="section" style="padding-top:24px;">
+    <h2 style="margin-bottom:16px;">Full menu</h2>
+    <div class="cat-tabs" id="cat_tabs"></div>
+    <div id="menu_list">Loading…</div>
+  </div>
+
+  <div class="site-footer">
+    <h3 id="footer_name">Restaurant</h3>
+    <p id="footer_address"></p>
+    <p id="footer_phone"></p>
+  </div>
+
+  <script src="js/supabase-config.js"></script>
+  <script>
+    let categories = [];
+    let items = [];
+    let activeCat = 'all';
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
+    }
+
+    async function loadMenu() {
+      const [{ data: r }, { data: cats }, { data: menu }] = await Promise.all([
+        supabaseClient.from('restaurant').select('*').eq('id', 1).single(),
+        supabaseClient.from('categories').select('*').order('sort_order'),
+        supabaseClient.from('menu_items').select('*').order('sort_order'),
+      ]);
+
+      if (r) {
+        document.title = r.name + ' — Menu';
+        document.getElementById('nav_name').textContent = r.name;
+        document.getElementById('footer_name').textContent = r.name;
+        document.getElementById('footer_address').textContent = r.address || '';
+        document.getElementById('footer_phone').textContent = [r.phone_primary, r.phone_secondary].filter(Boolean).join(' · ');
+        if (r.logo_url) {
+          const logo = document.getElementById('nav_logo');
+          logo.src = r.logo_url;
+          logo.style.display = 'block';
+        }
+      }
+
+      categories = cats || [];
+      items = menu || [];
+      renderTabs();
+      renderMenu();
+    }
+
+    function renderTabs() {
+      const el = document.getElementById('cat_tabs');
+      const usedCats = categories.filter(c => items.some(i => i.category_id === c.id));
+      let html = `<button class="${activeCat === 'all' ? 'active' : ''}" onclick="setActive('all')">All</button>`;
+      html += usedCats.map(c => `<button class="${activeCat === c.id ? 'active' : ''}" onclick="setActive('${c.id}')">${escapeHtml(c.name)}</button>`).join('');
+      el.innerHTML = html;
+    }
+
+    function setActive(catId) {
+      activeCat = catId;
+      renderTabs();
+      renderMenu();
+    }
+
+    function renderMenu() {
+      const el = document.getElementById('menu_list');
+      if (items.length === 0) {
+        el.innerHTML = '<p class="empty-note">Menu coming soon.</p>';
+        return;
+      }
+
+      const visibleCats = activeCat === 'all'
+        ? categories.filter(c => items.some(i => i.category_id === c.id))
+        : categories.filter(c => c.id === activeCat);
+
+      let html = '';
+      visibleCats.forEach(cat => {
+        const catItems = items.filter(i => i.category_id === cat.id);
+        if (catItems.length === 0) return;
+        html += `<h3 style="margin:22px 0 4px;">${escapeHtml(cat.name)}</h3>`;
+        html += catItems.map(renderRow).join('');
+      });
+
+      const uncategorized = items.filter(i => !i.category_id);
+      if (uncategorized.length > 0 && activeCat === 'all') {
+        html += `<h3 style="margin:22px 0 4px;">Other</h3>`;
+        html += uncategorized.map(renderRow).join('');
+      }
+
+      el.innerHTML = html || '<p class="empty-note">Nothing in this category yet.</p>';
+    }
+
+    function renderRow(item) {
+      const vegIcon = item.is_veg
+        ? '<span class="veg-dot"><span></span></span>'
+        : '<span class="nonveg-dot"><span></span></span>';
+      return `
+        <div class="menu-row">
+          <img src="${item.image_url || ''}" onerror="this.style.opacity=0">
+          <div class="info">
+            <div class="name-row">${vegIcon}<span class="name">${escapeHtml(item.name)}</span></div>
+            <div class="desc">${escapeHtml(item.description)}</div>
+            <div class="price">₹${item.price}</div>
+          </div>
+          ${!item.is_available ? '<span class="sold-out">Sold out</span>' : ''}
+        </div>
+      `;
+    }
+
+    loadMenu();
+  </script>
+</body>
+</html>
