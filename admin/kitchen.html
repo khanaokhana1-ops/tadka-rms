@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kitchen</title>
+  <link rel="stylesheet" href="../css/admin.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { background:#1F1B18; }
+    .kot-col { background:#2A2420; border-radius:10px; padding:12px; margin-bottom:16px; }
+    .kot-col h3 { color:white; font-size:15px; margin:0 0 10px; display:flex; justify-content:space-between; }
+    .kot-card { background:#FBF8F2; border-radius:8px; padding:14px; margin-bottom:10px; }
+    .kot-card .top { display:flex; justify-content:space-between; font-family:monospace; font-weight:700; font-size:14px; margin-bottom:6px; }
+    .kot-card .cust { font-size:13px; color:#57534E; margin-bottom:6px; }
+    .kot-card .item-line { font-size:13px; color:#1F1B18; margin:2px 0; }
+    .kot-card .notes { font-size:12px; font-style:italic; background:#F2ECE0; padding:6px 8px; border-radius:6px; margin:8px 0; color:#8A6D1F; }
+    .kot-card button { width:100%; margin-top:8px; padding:9px; border:none; border-radius:6px; color:white; font-weight:600; font-size:13px; }
+    .empty { color:#8A837A; font-size:13px; text-align:center; padding:16px 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap" style="max-width:600px;">
+    <script src="../js/admin-nav.js"></script>
+    <div class="topbar" style="color:white;">
+      <h1 style="color:white;">Kitchen</h1>
+      <button class="btn btn-secondary" onclick="logout()">Log out</button>
+    </div>
+    <div id="board">Loading…</div>
+  </div>
+
+  <script src="../js/supabase-config.js"></script>
+  <script src="../js/admin-auth.js"></script>
+  <script>
+    const STATUS_META = {
+      placed: { label: 'New orders', color: '#E8552E', next: 'preparing', nextLabel: 'Start preparing' },
+      preparing: { label: 'Preparing', color: '#F2A93B', next: 'ready', nextLabel: 'Mark ready' },
+      ready: { label: 'Ready', color: '#3F6B4A', next: 'completed', nextLabel: 'Mark completed' },
+      completed: { label: 'Completed', color: '#9C9490', next: null, nextLabel: null },
+    };
+
+    function timeAgo(ts) {
+      const mins = Math.max(0, Math.floor((Date.now() - new Date(ts).getTime()) / 60000));
+      if (mins < 1) return 'just now';
+      return mins + ' min ago';
+    }
+
+    async function loadOrders() {
+      await requireAuth();
+      const { data, error } = await supabaseClient.from('orders').select('*').order('created_at', { ascending: true });
+      if (error) { document.getElementById('board').innerHTML = '<p style="color:#E8552E;">' + error.message + '</p>'; return; }
+      render(data || []);
+    }
+
+    function render(orders) {
+      const cols = ['placed', 'preparing', 'ready'];
+      const board = document.getElementById('board');
+      board.innerHTML = cols.map(status => {
+        const meta = STATUS_META[status];
+        const list = orders.filter(o => o.status === status);
+        return `
+          <div class="kot-col">
+            <h3><span>${meta.label}</span><span>${list.length}</span></h3>
+            ${list.length === 0 ? '<p class="empty">Nothing here</p>' : list.map(o => renderCard(o, meta)).join('')}
+          </div>
+        `;
+      }).join('');
+
+      const completed = orders.filter(o => o.status === 'completed');
+      board.innerHTML += `
+        <div class="kot-col">
+          <h3><span>Completed today</span><span>${completed.length}</span></h3>
+          ${completed.slice(-5).reverse().map(o => renderCard(o, STATUS_META.completed)).join('') || '<p class="empty">None yet</p>'}
+        </div>
+      `;
+    }
+
+    function renderCard(o, meta) {
+      const itemLines = (o.items || []).map(it => `<div class="item-line">${it.qty} × ${it.name}</div>`).join('');
+      return `
+        <div class="kot-card" style="border-left:4px solid ${meta.color};">
+          <div class="top"><span>#${o.ticket_no}</span><span>${timeAgo(o.created_at)}</span></div>
+          <div class="cust">${o.customer_name} · ${o.phone} · ${o.order_type === 'pickup' ? 'Pickup' : 'Delivery'}</div>
+          ${o.address ? `<div class="cust">${o.address}</div>` : ''}
+          ${itemLines}
+          ${o.notes ? `<div class="notes">"${o.notes}"</div>` : ''}
+          ${meta.next ? `<button style="background:${STATUS_META[meta.next] ? meta.color : meta.color}" onclick="advance('${o.id}','${meta.next}')">${meta.nextLabel}</button>` : ''}
+        </div>
+      `;
+    }
+
+    async function advance(id, nextStatus) {
+      await supabaseClient.from('orders').update({ status: nextStatus }).eq('id', id);
+      loadOrders();
+    }
+
+    loadOrders();
+    setInterval(loadOrders, 5000);
+  </script>
+</body>
+</html>

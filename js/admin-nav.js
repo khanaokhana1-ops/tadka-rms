@@ -4,5 +4,5 @@ document.write(`
     <a href="menu.html" style="text-decoration:none;"><button class="btn btn-secondary">Menu & Categories</button></a>
     <a href="banners.html" style="text-decoration:none;"><button class="btn btn-secondary">Banners</button></a>
     <a href="offers.html" style="text-decoration:none;"><button class="btn btn-secondary">Offers</button></a>
-  </div>
+ <a href="kitchen.html"><button class="btn btn-secondary">Kitchen</button></a> </div>
 `);
