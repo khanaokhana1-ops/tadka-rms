@@ -1,26 +1,126 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Connecting...</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loading…</title>
+  <link rel="stylesheet" href="css/site.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body style="font-family: sans-serif; text-align:center; padding-top: 100px;">
-  <h1 id="name">Connecting to your database...</h1>
-  <p id="status"></p>
+<body>
+  <nav class="site-nav">
+    <a class="brand" href="index.html">
+      <img id="nav_logo" src="" style="display:none;">
+      <span class="brand-name" id="nav_name">Restaurant</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="active">Home</a>
+      <a href="menu.html">Menu</a>
+    </div>
+  </nav>
+
+  <div class="hero">
+    <p class="tag">Cloud kitchen · <span id="status_pill_wrap"></span></p>
+    <h1 id="hero_name">Loading…</h1>
+    <p id="hero_tagline"></p>
+    <a class="btn" href="menu.html">View full menu →</a>
+  </div>
+
+  <div class="section" id="banners_section" style="display:none;">
+    <h2>What's new</h2>
+    <div class="banner-scroll" id="banners_list"></div>
+  </div>
+
+  <div class="section" id="offers_section" style="display:none;">
+    <h2>Offers for you</h2>
+    <div class="offer-scroll" id="offers_list"></div>
+  </div>
+
+  <div class="section">
+    <h2>Popular picks</h2>
+    <div class="grid" id="featured_list"></div>
+  </div>
+
+  <div class="site-footer">
+    <h3 id="footer_name">Restaurant</h3>
+    <p id="footer_address"></p>
+    <p id="footer_phone"></p>
+    <p id="footer_hours"></p>
+  </div>
+
   <script src="js/supabase-config.js"></script>
   <script>
-    async function loadRestaurant() {
-      const { data, error } = await supabaseClient.from('restaurant').select('*').eq('id', 1).single();
-      if (error) {
-        document.getElementById('name').textContent = "Connection failed ❌";
-        document.getElementById('status').textContent = error.message;
-        return;
-      }
-      document.getElementById('name').textContent = data.name;
-      document.getElementById('status').textContent = data.is_open ? "We're open! ✅" : "Currently closed";
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
     }
-    loadRestaurant();
+
+    async function loadHome() {
+      const [{ data: r }, { data: banners }, { data: offers }, { data: items }] = await Promise.all([
+        supabaseClient.from('restaurant').select('*').eq('id', 1).single(),
+        supabaseClient.from('banners').select('*').eq('is_active', true).order('sort_order'),
+        supabaseClient.from('offers').select('*').eq('is_active', true).order('created_at', { ascending: false }),
+        supabaseClient.from('menu_items').select('*').eq('is_available', true).order('sort_order').limit(6),
+      ]);
+
+      if (r) {
+        document.title = r.name;
+        document.getElementById('nav_name').textContent = r.name;
+        document.getElementById('hero_name').textContent = r.name;
+        document.getElementById('hero_tagline').textContent = r.tagline || '';
+        document.getElementById('footer_name').textContent = r.name;
+        document.getElementById('footer_address').textContent = r.address || '';
+        document.getElementById('footer_phone').textContent = [r.phone_primary, r.phone_secondary].filter(Boolean).join(' · ');
+        document.getElementById('footer_hours').textContent = r.opening_hours || '';
+        if (r.logo_url) {
+          const logo = document.getElementById('nav_logo');
+          logo.src = r.logo_url;
+          logo.style.display = 'block';
+        }
+        document.getElementById('status_pill_wrap').innerHTML =
+          `<span class="status-pill ${r.is_open ? 'status-open' : 'status-closed'}">${r.is_open ? 'Open now' : 'Closed'}</span>`;
+      }
+
+      if (banners && banners.length > 0) {
+        document.getElementById('banners_section').style.display = 'block';
+        document.getElementById('banners_list').innerHTML = banners.map(b => `
+          <div class="banner-card">
+            <img src="${b.image_url}" onerror="this.style.opacity=0">
+            <div class="banner-text">
+              <div class="t">${escapeHtml(b.title)}</div>
+              <div class="s">${escapeHtml(b.subtitle)}</div>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      if (offers && offers.length > 0) {
+        document.getElementById('offers_section').style.display = 'block';
+        document.getElementById('offers_list').innerHTML = offers.map(o => `
+          <div class="offer-card">
+            <div class="t">${escapeHtml(o.title)}</div>
+            <div class="d">${escapeHtml(o.description)}</div>
+            ${o.code ? `<span class="offer-code">${escapeHtml(o.code)}</span>` : ''}
+          </div>
+        `).join('');
+      }
+
+      const featuredEl = document.getElementById('featured_list');
+      if (items && items.length > 0) {
+        featuredEl.innerHTML = items.map(i => `
+          <div class="item-card">
+            <img src="${i.image_url || ''}" onerror="this.style.opacity=0">
+            <div class="name">${escapeHtml(i.name)}</div>
+            <div class="price">₹${i.price}</div>
+          </div>
+        `).join('');
+      } else {
+        featuredEl.innerHTML = '<p class="empty-note">Menu coming soon.</p>';
+      }
+    }
+
+    loadHome();
   </script>
 </body>
 </html>
