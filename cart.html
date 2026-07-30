@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your Cart</title>
+  <link rel="stylesheet" href="css/site.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a class="brand" href="index.html">
+      <img id="nav_logo" src="" style="display:none;">
+      <span class="brand-name" id="nav_name">Restaurant</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="menu.html">Menu</a>
+      <a href="cart.html" class="active" style="position:relative;">Cart<span id="cart_badge" style="position:absolute; top:-4px; right:2px; background:#E8552E; color:white; font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px;"></span></a>
+    </div>
+  </nav>
+
+  <div class="section" style="padding-top:24px; padding-bottom:120px;">
+    <h2 style="margin-bottom:16px;">Your cart</h2>
+    <div id="cart_list"></div>
+    <div id="summary_wrap"></div>
+  </div>
+
+  <div class="sticky-bar" id="sticky_bar" style="display:none;">
+    <a class="btn" href="checkout.html" id="checkout_btn">Checkout →</a>
+  </div>
+
+  <script src="js/supabase-config.js"></script>
+  <script>
+    let restaurantSettings = null;
+
+    function getCart() {
+      try { return JSON.parse(localStorage.getItem('tk_cart') || '[]'); } catch { return []; }
+    }
+    function setCart(cart) {
+      localStorage.setItem('tk_cart', JSON.stringify(cart));
+      updateCartBadge();
+    }
+    function updateCartBadge() {
+      const cart = getCart();
+      const count = cart.reduce((s, i) => s + i.qty, 0);
+      const badge = document.getElementById('cart_badge');
+      if (badge) badge.textContent = count > 0 ? count : '';
+    }
+    function inc(id) {
+      const cart = getCart();
+      const item = cart.find(c => c.id === id);
+      if (item) item.qty += 1;
+      setCart(cart);
+      render();
+    }
+    function dec(id) {
+      let cart = getCart();
+      cart = cart.map(c => c.id === id ? { ...c, qty: c.qty - 1 } : c).filter(c => c.qty > 0);
+      setCart(cart);
+      render();
+    }
+    function removeItem(id) {
+      let cart = getCart().filter(c => c.id !== id);
+      setCart(cart);
+      render();
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
+    }
+
+    function calcTotals(cart) {
+      const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
+      const deliveryFeeSetting = restaurantSettings?.delivery_fee ?? 40;
+      const freeAbove = restaurantSettings?.free_delivery_above ?? 499;
+      const taxRate = restaurantSettings?.tax_rate ?? 0.05;
+      const deliveryFee = subtotal === 0 || subtotal >= freeAbove ? 0 : deliveryFeeSetting;
+      const tax = Math.round(subtotal * taxRate);
+      const total = subtotal + deliveryFee + tax;
+      return { subtotal, deliveryFee, tax, total, freeAbove };
+    }
+
+    function render() {
+      const cart = getCart();
+      const listEl = document.getElementById('cart_list');
+      const summaryEl = document.getElementById('summary_wrap');
+      const stickyBar = document.getElementById('sticky_bar');
+
+      if (cart.length === 0) {
+        listEl.innerHTML = '<p class="empty-note">Your cart is empty. <a href="menu.html" style="color:var(--ember); font-weight:600;">Browse the menu →</a></p>';
+        summaryEl.innerHTML = '';
+        stickyBar.style.display = 'none';
+        return;
+      }
+
+      listEl.innerHTML = cart.map(item => `
+        <div class="cart-row">
+          <img src="${item.image_url || ''}" onerror="this.style.opacity=0">
+          <div class="info">
+            <div class="name">${escapeHtml(item.name)}</div>
+            <div class="unit-price">₹${item.price} each</div>
+          </div>
+          <div class="qty-stepper">
+            <button onclick="dec('${item.id}')">−</button>
+            <span>${item.qty}</span>
+            <button onclick="inc('${item.id}')">+</button>
+          </div>
+          <button class="remove-x" onclick="removeItem('${item.id}')">✕</button>
+        </div>
+      `).join('');
+
+      const t = calcTotals(cart);
+      summaryEl.innerHTML = `
+        <div class="summary-box">
+          <div class="summary-row"><span>Subtotal</span><span class="val">₹${t.subtotal}</span></div>
+          <div class="summary-row"><span>Delivery fee${t.deliveryFee === 0 ? ' (free above ₹' + t.freeAbove + ')' : ''}</span><span class="val">${t.deliveryFee === 0 ? 'FREE' : '₹' + t.deliveryFee}</span></div>
+          <div class="summary-row"><span>Taxes & charges</span><span class="val">₹${t.tax}</span></div>
+          <div class="summary-row total"><span>Total</span><span class="val">₹${t.total}</span></div>
+        </div>
+      `;
+
+      stickyBar.style.display = 'block';
+      document.getElementById('checkout_btn').textContent = `Checkout · ₹${t.total} →`;
+    }
+
+    async function loadSettingsAndRender() {
+      const { data: r } = await supabaseClient.from('restaurant').select('*').eq('id', 1).single();
+      restaurantSettings = r;
+      if (r) {
+        document.getElementById('nav_name').textContent = r.name;
+        if (r.logo_url) {
+          const logo = document.getElementById('nav_logo');
+          logo.src = r.logo_url;
+          logo.style.display = 'block';
+        }
+      }
+      render();
+      updateCartBadge();
+    }
+
+    loadSettingsAndRender();
+  </script>
+</body>
+</html>
