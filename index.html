@@ -1,4 +1,8 @@
-<!DOCTYPE html>
+<div class="nav-links">
+      <a href="index.html" class="active">Home</a>
+      <a href="menu.html">Menu</a>
+      <a href="cart.html" style="position:relative;">Cart<span id="cart_badge" style="position:absolute; top:-4px; right:2px; background:#E8552E; color:white; font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px;"></span></a>
+    </div><!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -121,6 +125,9 @@
     }
 
     loadHome();
+if (typeof updateCartBadge === 'function') updateCartBadge();
   </script>
 </body>
 </html>
+
+

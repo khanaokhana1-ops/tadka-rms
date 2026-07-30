@@ -16,6 +16,7 @@
     <div class="nav-links">
       <a href="index.html">Home</a>
       <a href="menu.html" class="active">Menu</a>
+      <a href="cart.html" style="position:relative;">Cart<span id="cart_badge" style="position:absolute; top:-4px; right:2px; background:#E8552E; color:white; font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px;"></span></a>
     </div>
   </nav>
 
@@ -41,6 +42,34 @@
       const div = document.createElement('div');
       div.textContent = str || '';
       return div.innerHTML;
+    }
+
+    function getCart() {
+      try { return JSON.parse(localStorage.getItem('tk_cart') || '[]'); } catch { return []; }
+    }
+    function setCart(cart) {
+      localStorage.setItem('tk_cart', JSON.stringify(cart));
+      updateCartBadge();
+    }
+    function updateCartBadge() {
+      const cart = getCart();
+      const count = cart.reduce((s, i) => s + i.qty, 0);
+      const badge = document.getElementById('cart_badge');
+      if (badge) badge.textContent = count > 0 ? count : '';
+    }
+    function addToCart(item) {
+      const cart = getCart();
+      const existing = cart.find(c => c.id === item.id);
+      if (existing) existing.qty += 1;
+      else cart.push({ id: item.id, name: item.name, price: item.price, is_veg: item.is_veg, image_url: item.image_url, qty: 1 });
+      setCart(cart);
+      renderMenu();
+    }
+    function decFromCart(id) {
+      let cart = getCart();
+      cart = cart.map(c => c.id === id ? { ...c, qty: c.qty - 1 } : c).filter(c => c.qty > 0);
+      setCart(cart);
+      renderMenu();
     }
 
     async function loadMenu() {
@@ -115,6 +144,21 @@
       const vegIcon = item.is_veg
         ? '<span class="veg-dot"><span></span></span>'
         : '<span class="nonveg-dot"><span></span></span>';
+      const cart = getCart();
+      const inCart = cart.find(c => c.id === item.id);
+      let actionHtml = '';
+      if (!item.is_available) {
+        actionHtml = '<span class="sold-out">Sold out</span>';
+      } else if (inCart) {
+        actionHtml = `
+          <div class="qty-stepper">
+            <button onclick="decFromCart('${item.id}')">−</button>
+            <span>${inCart.qty}</span>
+            <button onclick='addToCart(${JSON.stringify(item)})'>+</button>
+          </div>`;
+      } else {
+        actionHtml = `<button class="add-btn" onclick='addToCart(${JSON.stringify(item)})'>Add</button>`;
+      }
       return `
         <div class="menu-row">
           <img src="${item.image_url || ''}" onerror="this.style.opacity=0">
@@ -123,12 +167,13 @@
             <div class="desc">${escapeHtml(item.description)}</div>
             <div class="price">₹${item.price}</div>
           </div>
-          ${!item.is_available ? '<span class="sold-out">Sold out</span>' : ''}
+          ${actionHtml}
         </div>
       `;
     }
 
     loadMenu();
+    updateCartBadge();
   </script>
 </body>
 </html>
