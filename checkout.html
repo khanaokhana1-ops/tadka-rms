@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Checkout</title>
+  <link rel="stylesheet" href="css/site.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a class="brand" href="index.html">
+      <img id="nav_logo" src="" style="display:none;">
+      <span class="brand-name" id="nav_name">Restaurant</span>
+    </a>
+    <div class="nav-links">
+      <a href="menu.html">← Back to menu</a>
+    </div>
+  </nav>
+
+  <div class="section" style="padding-top:24px; padding-bottom:140px;" id="checkout_wrap">
+    <h2 style="margin-bottom:16px;">Checkout</h2>
+
+    <div class="order-type-toggle">
+      <button id="btn_delivery" class="active" onclick="setOrderType('delivery')">Delivery</button>
+      <button id="btn_pickup" onclick="setOrderType('pickup')">Self pickup</button>
+    </div>
+
+    <div class="form-group">
+      <label>Full name</label>
+      <input type="text" id="f_name" placeholder="Your name">
+    </div>
+    <div class="form-group">
+      <label>Phone number</label>
+      <input type="text" id="f_phone" placeholder="10-digit mobile number">
+    </div>
+    <div class="form-group" id="address_group">
+      <label>Delivery address</label>
+      <textarea id="f_address" placeholder="House/flat, street, landmark, area"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Notes for the kitchen (optional)</label>
+      <textarea id="f_notes" placeholder="Less spicy, no onion, etc." rows="2"></textarea>
+    </div>
+
+    <div class="summary-box" id="summary_box"></div>
+    <p class="error" id="form_error" style="color:#C43F1D; font-size:13px; margin-top:10px;"></p>
+  </div>
+
+  <div class="sticky-bar">
+    <button class="btn" id="place_order_btn" onclick="placeOrder()">Place order (Cash on Delivery)</button>
+  </div>
+
+  <script src="js/supabase-config.js"></script>
+  <script>
+    let orderType = 'delivery';
+    let restaurantSettings = null;
+
+    function getCart() {
+      try { return JSON.parse(localStorage.getItem('tk_cart') || '[]'); } catch { return []; }
+    }
+    function setCart(cart) {
+      localStorage.setItem('tk_cart', JSON.stringify(cart));
+    }
+
+    function setOrderType(type) {
+      orderType = type;
+      document.getElementById('btn_delivery').classList.toggle('active', type === 'delivery');
+      document.getElementById('btn_pickup').classList.toggle('active', type === 'pickup');
+      document.getElementById('address_group').style.display = type === 'delivery' ? 'block' : 'none';
+      renderSummary();
+    }
+
+    function calcTotals(cart) {
+      const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
+      const deliveryFeeSetting = restaurantSettings?.delivery_fee ?? 40;
+      const freeAbove = restaurantSettings?.free_delivery_above ?? 499;
+      const taxRate = restaurantSettings?.tax_rate ?? 0.05;
+      const deliveryFee = orderType === 'pickup' ? 0 : (subtotal === 0 || subtotal >= freeAbove ? 0 : deliveryFeeSetting);
+      const tax = Math.round(subtotal * taxRate);
+      const total = subtotal + deliveryFee + tax;
+      return { subtotal, deliveryFee, tax, total };
+    }
+
+    function renderSummary() {
+      const cart = getCart();
+      const t = calcTotals(cart);
+      document.getElementById('summary_box').innerHTML = `
+        <div class="summary-row"><span>Subtotal</span><span class="val">₹${t.subtotal}</span></div>
+        <div class="summary-row"><span>Delivery fee</span><span class="val">${t.deliveryFee === 0 ? 'FREE' : '₹' + t.deliveryFee}</span></div>
+        <div class="summary-row"><span>Taxes & charges</span><span class="val">₹${t.tax}</span></div>
+        <div class="summary-row total"><span>Total (Pay on delivery)</span><span class="val">₹${t.total}</span></div>
+      `;
+      document.getElementById('place_order_btn').textContent = `Place order · ₹${t.total} (COD)`;
+    }
+
+    async function placeOrder() {
+      const errorEl = document.getElementById('form_error');
+      errorEl.textContent = '';
+
+      const cart = getCart();
+      if (cart.length === 0) {
+        errorEl.textContent = 'Your cart is empty.';
+        return;
+      }
+
+      const name = document.getElementById('f_name').value.trim();
+      const phone = document.getElementById('f_phone').value.trim();
+      const address = document.getElementById('f_address').value.trim();
+      const notes = document.getElementById('f_notes').value.trim();
+
+      if (!name || !phone) {
+        errorEl.textContent = 'Please enter your name and phone number.';
+        return;
+      }
+      if (orderType === 'delivery' && !address) {
+        errorEl.textContent = 'Please enter a delivery address.';
+        return;
+      }
+
+      const t = calcTotals(cart);
+      const btn = document.getElementById('place_order_btn');
+      btn.textContent = 'Placing order…';
+      btn.disabled = true;
+
+      const { data, error } = await supabaseClient.from('orders').insert({
+        items: cart.map(c => ({ menu_item_id: c.id, name: c.name, price: c.price, qty: c.qty, is_veg: c.is_veg })),
+        customer_name: name,
+        phone: phone,
+        address: orderType === 'delivery' ? address : null,
+        notes: notes,
+        order_type: orderType,
+        payment_method: 'cod',
+        subtotal: t.subtotal,
+        delivery_fee: t.deliveryFee,
+        tax: t.tax,
+        total: t.total,
+        status: 'placed',
+      }).select().single();
+
+      if (error) {
+        errorEl.textContent = error.message;
+        btn.textContent = `Place order · ₹${t.total} (COD)`;
+        btn.disabled = false;
+        return;
+      }
+
+      setCart([]);
+      showConfirmation(data);
+    }
+
+    function showConfirmation(order) {
+      document.getElementById('checkout_wrap').innerHTML = `
+        <div style="text-align:center; padding:30px 0;">
+          <h2 style="margin-bottom:10px;">Order placed! 🎉</h2>
+          <p style="color:var(--ink); margin-bottom:20px;">The kitchen has your order. You'll pay ₹${order.total} on ${order.order_type === 'pickup' ? 'pickup' : 'delivery'}.</p>
+          <div class="ticket-box">
+            <div class="num">#${order.ticket_no}</div>
+            <p style="font-size:13px; color:var(--ink-light); margin-top:6px;">Your order number</p>
+          </div>
+          <a href="menu.html" class="btn" style="display:inline-block; margin-top:24px;">Order something else</a>
+        </div>
+      `;
+      document.querySelector('.sticky-bar').style.display = 'none';
+    }
+
+    async function init() {
+      const { data: r } = await supabaseClient.from('restaurant').select('*').eq('id', 1).single();
+      restaurantSettings = r;
+      if (r) {
+        document.getElementById('nav_name').textContent = r.name;
+        if (r.logo_url) {
+          const logo = document.getElementById('nav_logo');
+          logo.src = r.logo_url;
+          logo.style.display = 'block';
+        }
+      }
+      const cart = getCart();
+      if (cart.length === 0) {
+        document.getElementById('checkout_wrap').innerHTML = '<p class="empty-note">Your cart is empty. <a href="menu.html" style="color:var(--ember); font-weight:600;">Browse the menu →</a></p>';
+        document.querySelector('.sticky-bar').style.display = 'none';
+        return;
+      }
+      renderSummary();
+    }
+
+    init();
+  </script>
+</body>
+</html>
