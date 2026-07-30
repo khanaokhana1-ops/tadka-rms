@@ -17,6 +17,8 @@
     .kot-card .notes { font-size:12px; font-style:italic; background:#F2ECE0; padding:6px 8px; border-radius:6px; margin:8px 0; color:#8A6D1F; }
     .kot-card button { width:100%; margin-top:8px; padding:9px; border:none; border-radius:6px; color:white; font-weight:600; font-size:13px; }
     .empty { color:#8A837A; font-size:13px; text-align:center; padding:16px 0; }
+    .sound-toggle { background:#2A2420; color:white; border:1px solid #4A423A; border-radius:999px; padding:8px 16px; font-size:13px; font-weight:600; margin-bottom:16px; }
+    .new-order-banner { background:#E8552E; color:white; text-align:center; padding:10px; border-radius:8px; font-weight:700; margin-bottom:14px; display:none; }
   </style>
 </head>
 <body>
@@ -26,6 +28,10 @@
       <h1 style="color:white;">Kitchen</h1>
       <button class="btn btn-secondary" onclick="logout()">Log out</button>
     </div>
+
+    <button class="sound-toggle" id="sound_btn" onclick="toggleSound()">🔔 Sound: On</button>
+    <div class="new-order-banner" id="new_banner">New order just came in!</div>
+
     <div id="board">Loading…</div>
   </div>
 
@@ -39,6 +45,45 @@
       completed: { label: 'Completed', color: '#9C9490', next: null, nextLabel: null },
     };
 
+    let soundOn = localStorage.getItem('tk_kitchen_sound') !== 'off';
+    let knownOrderIds = null; // null = first load, don't alert
+    let audioCtx = null;
+
+    function updateSoundBtn() {
+      document.getElementById('sound_btn').textContent = soundOn ? '🔔 Sound: On' : '🔕 Sound: Off';
+    }
+    function toggleSound() {
+      soundOn = !soundOn;
+      localStorage.setItem('tk_kitchen_sound', soundOn ? 'on' : 'off');
+      updateSoundBtn();
+      if (soundOn) playBeep(); // quick confirmation beep
+    }
+
+    function playBeep() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioCtx.currentTime;
+        [0, 0.28].forEach(offset => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(880, now + offset);
+          gain.gain.setValueAtTime(0.0001, now + offset);
+          gain.gain.exponentialRampToValueAtTime(0.3, now + offset + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.22);
+          osc.connect(gain).connect(audioCtx.destination);
+          osc.start(now + offset);
+          osc.stop(now + offset + 0.25);
+        });
+      } catch (e) { console.error('sound failed', e); }
+    }
+
+    function showNewOrderBanner() {
+      const el = document.getElementById('new_banner');
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
     function timeAgo(ts) {
       const mins = Math.max(0, Math.floor((Date.now() - new Date(ts).getTime()) / 60000));
       if (mins < 1) return 'just now';
@@ -49,7 +94,22 @@
       await requireAuth();
       const { data, error } = await supabaseClient.from('orders').select('*').order('created_at', { ascending: true });
       if (error) { document.getElementById('board').innerHTML = '<p style="color:#E8552E;">' + error.message + '</p>'; return; }
-      render(data || []);
+
+      const orders = data || [];
+      const currentIds = new Set(orders.map(o => o.id));
+
+      if (knownOrderIds === null) {
+        knownOrderIds = currentIds;
+      } else {
+        const newPlacedOrders = orders.filter(o => o.status === 'placed' && !knownOrderIds.has(o.id));
+        if (newPlacedOrders.length > 0) {
+          if (soundOn) playBeep();
+          showNewOrderBanner();
+        }
+        knownOrderIds = currentIds;
+      }
+
+      render(orders);
     }
 
     function render(orders) {
@@ -84,7 +144,7 @@
           ${o.address ? `<div class="cust">${o.address}</div>` : ''}
           ${itemLines}
           ${o.notes ? `<div class="notes">"${o.notes}"</div>` : ''}
-          ${meta.next ? `<button style="background:${STATUS_META[meta.next] ? meta.color : meta.color}" onclick="advance('${o.id}','${meta.next}')">${meta.nextLabel}</button>` : ''}
+          ${meta.next ? `<button style="background:${meta.color}" onclick="advance('${o.id}','${meta.next}')">${meta.nextLabel}</button>` : ''}
         </div>
       `;
     }
@@ -94,6 +154,7 @@
       loadOrders();
     }
 
+    updateSoundBtn();
     loadOrders();
     setInterval(loadOrders, 5000);
   </script>
