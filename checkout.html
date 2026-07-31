@@ -43,6 +43,17 @@
       <textarea id="f_notes" placeholder="Less spicy, no onion, etc." rows="2"></textarea>
     </div>
 
+    <div class="form-group">
+      <label>Payment method</label>
+      <div class="order-type-toggle">
+        <button id="btn_cod" class="active" onclick="setPaymentMethod('cod')">Cash on delivery</button>
+        <button id="btn_upi" onclick="setPaymentMethod('upi')">Pay via UPI</button>
+      </div>
+      <p id="upi_note" style="display:none; font-size:12px; color:var(--ink-light); margin-top:6px;">
+        Your UPI app will open with the amount pre-filled. Complete the payment there — your order will already be saved.
+      </p>
+    </div>
+
     <div class="summary-box" id="summary_box"></div>
     <p class="error" id="form_error" style="color:#C43F1D; font-size:13px; margin-top:10px;"></p>
   </div>
@@ -53,7 +64,11 @@
 
   <script src="js/supabase-config.js"></script>
   <script>
+    const UPI_ID = '9336889276-2@okbizaxis';
+    const UPI_PAYEE_NAME = 'Khana-O-Khana';
+
     let orderType = 'delivery';
+    let paymentMethod = 'cod';
     let restaurantSettings = null;
 
     function getCart() {
@@ -68,6 +83,14 @@
       document.getElementById('btn_delivery').classList.toggle('active', type === 'delivery');
       document.getElementById('btn_pickup').classList.toggle('active', type === 'pickup');
       document.getElementById('address_group').style.display = type === 'delivery' ? 'block' : 'none';
+      renderSummary();
+    }
+
+    function setPaymentMethod(method) {
+      paymentMethod = method;
+      document.getElementById('btn_cod').classList.toggle('active', method === 'cod');
+      document.getElementById('btn_upi').classList.toggle('active', method === 'upi');
+      document.getElementById('upi_note').style.display = method === 'upi' ? 'block' : 'none';
       renderSummary();
     }
 
@@ -89,9 +112,17 @@
         <div class="summary-row"><span>Subtotal</span><span class="val">₹${t.subtotal}</span></div>
         <div class="summary-row"><span>Delivery fee</span><span class="val">${t.deliveryFee === 0 ? 'FREE' : '₹' + t.deliveryFee}</span></div>
         <div class="summary-row"><span>Taxes & charges</span><span class="val">₹${t.tax}</span></div>
-        <div class="summary-row total"><span>Total (Pay on delivery)</span><span class="val">₹${t.total}</span></div>
+        <div class="summary-row total"><span>Total</span><span class="val">₹${t.total}</span></div>
       `;
-      document.getElementById('place_order_btn').textContent = `Place order · ₹${t.total} (COD)`;
+      const btn = document.getElementById('place_order_btn');
+      btn.textContent = paymentMethod === 'upi'
+        ? `Pay ₹${t.total} via UPI`
+        : `Place order · ₹${t.total} (COD)`;
+    }
+
+    function buildUpiLink(amount, ticketNo) {
+      const note = encodeURIComponent(`Order #${ticketNo} - ${UPI_PAYEE_NAME}`);
+      return `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(UPI_PAYEE_NAME)}&am=${amount}&cu=INR&tn=${note}`;
     }
 
     async function placeOrder() {
@@ -130,7 +161,7 @@
         address: orderType === 'delivery' ? address : null,
         notes: notes,
         order_type: orderType,
-        payment_method: 'cod',
+        payment_method: paymentMethod,
         subtotal: t.subtotal,
         delivery_fee: t.deliveryFee,
         tax: t.tax,
@@ -140,25 +171,38 @@
 
       if (error) {
         errorEl.textContent = error.message;
-        btn.textContent = `Place order · ₹${t.total} (COD)`;
+        renderSummary();
         btn.disabled = false;
         return;
       }
 
       setCart([]);
-      showConfirmation(data);
+
+      if (paymentMethod === 'upi') {
+        const upiLink = buildUpiLink(t.total, data.ticket_no);
+        showConfirmation(data, upiLink);
+        window.location.href = upiLink;
+      } else {
+        showConfirmation(data, null);
+      }
     }
 
-    function showConfirmation(order) {
+    function showConfirmation(order, upiLink) {
       document.getElementById('checkout_wrap').innerHTML = `
         <div style="text-align:center; padding:30px 0;">
           <h2 style="margin-bottom:10px;">Order placed! 🎉</h2>
-          <p style="color:var(--ink); margin-bottom:20px;">The kitchen has your order. You'll pay ₹${order.total} on ${order.order_type === 'pickup' ? 'pickup' : 'delivery'}.</p>
+          <p style="color:var(--ink); margin-bottom:20px;">
+            ${upiLink
+              ? `Complete your ₹${order.total} payment in your UPI app. If it didn't open automatically, tap below.`
+              : `The kitchen has your order. You'll pay ₹${order.total} on ${order.order_type === 'pickup' ? 'pickup' : 'delivery'}.`}
+          </p>
           <div class="ticket-box">
             <div class="num">#${order.ticket_no}</div>
             <p style="font-size:13px; color:var(--ink-light); margin-top:6px;">Your order number</p>
           </div>
-          <a href="menu.html" class="btn" style="display:inline-block; margin-top:24px;">Order something else</a>
+          ${upiLink ? `<a href="${upiLink}" class="btn" style="display:inline-block; margin-top:20px;">Open UPI app to pay ₹${order.total}</a>` : ''}
+          <br>
+          <a href="menu.html" style="display:inline-block; margin-top:16px; color:var(--ink); font-size:14px;">Order something else</a>
         </div>
       `;
       document.querySelector('.sticky-bar').style.display = 'none';
