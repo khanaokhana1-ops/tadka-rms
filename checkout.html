@@ -50,7 +50,7 @@
         <button id="btn_upi" onclick="setPaymentMethod('upi')">Pay via UPI</button>
       </div>
       <p id="upi_note" style="display:none; font-size:12px; color:var(--ink-light); margin-top:6px;">
-        Your UPI app will open with the amount pre-filled. Complete the payment there — your order will already be saved.
+        Your UPI app will open to complete payment. Your order is only placed after you confirm the payment went through.
       </p>
     </div>
 
@@ -59,20 +59,21 @@
   </div>
 
   <div class="sticky-bar">
-    <button class="btn" id="place_order_btn" onclick="placeOrder()">Place order (Cash on Delivery)</button>
+    <button class="btn" id="place_order_btn" onclick="handleMainButton()">Place order (Cash on Delivery)</button>
   </div>
 
   <script src="js/supabase-config.js"></script>
   <script>
-    const UPI_ID = '9336889276-2@okbizaxis';
-    const UPI_PAYEE_NAME = 'Khana-O-Khana';
+    var UPI_ID = '9336889276-2@okbizaxis';
+    var UPI_PAYEE_NAME = 'Khana-O-Khana';
+    var PENDING_KEY = 'tk_pending_upi_order';
 
-    let orderType = 'delivery';
-    let paymentMethod = 'cod';
-    let restaurantSettings = null;
+    var orderType = 'delivery';
+    var paymentMethod = 'cod';
+    var restaurantSettings = null;
 
     function getCart() {
-      try { return JSON.parse(localStorage.getItem('tk_cart') || '[]'); } catch { return []; }
+      try { return JSON.parse(localStorage.getItem('tk_cart') || '[]'); } catch (e) { return []; }
     }
     function setCart(cart) {
       localStorage.setItem('tk_cart', JSON.stringify(cart));
@@ -95,137 +96,190 @@
     }
 
     function calcTotals(cart) {
-      const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
-      const deliveryFeeSetting = restaurantSettings?.delivery_fee ?? 40;
-      const freeAbove = restaurantSettings?.free_delivery_above ?? 499;
-      const taxRate = restaurantSettings?.tax_rate ?? 0.05;
-      const deliveryFee = orderType === 'pickup' ? 0 : (subtotal === 0 || subtotal >= freeAbove ? 0 : deliveryFeeSetting);
-      const tax = Math.round(subtotal * taxRate);
-      const total = subtotal + deliveryFee + tax;
-      return { subtotal, deliveryFee, tax, total };
+      var subtotal = 0;
+      for (var i = 0; i < cart.length; i++) { subtotal += cart[i].price * cart[i].qty; }
+      var deliveryFeeSetting = (restaurantSettings && restaurantSettings.delivery_fee != null) ? restaurantSettings.delivery_fee : 40;
+      var freeAbove = (restaurantSettings && restaurantSettings.free_delivery_above != null) ? restaurantSettings.free_delivery_above : 499;
+      var taxRate = (restaurantSettings && restaurantSettings.tax_rate != null) ? restaurantSettings.tax_rate : 0.05;
+      var deliveryFee = orderType === 'pickup' ? 0 : (subtotal === 0 || subtotal >= freeAbove ? 0 : deliveryFeeSetting);
+      var tax = Math.round(subtotal * taxRate);
+      var total = subtotal + deliveryFee + tax;
+      return { subtotal: subtotal, deliveryFee: deliveryFee, tax: tax, total: total };
     }
 
     function renderSummary() {
-      const cart = getCart();
-      const t = calcTotals(cart);
-      document.getElementById('summary_box').innerHTML = `
-        <div class="summary-row"><span>Subtotal</span><span class="val">₹${t.subtotal}</span></div>
-        <div class="summary-row"><span>Delivery fee</span><span class="val">${t.deliveryFee === 0 ? 'FREE' : '₹' + t.deliveryFee}</span></div>
-        <div class="summary-row"><span>Taxes & charges</span><span class="val">₹${t.tax}</span></div>
-        <div class="summary-row total"><span>Total</span><span class="val">₹${t.total}</span></div>
-      `;
-      const btn = document.getElementById('place_order_btn');
-      btn.textContent = paymentMethod === 'upi'
-        ? `Pay ₹${t.total} via UPI`
-        : `Place order · ₹${t.total} (COD)`;
+      var cart = getCart();
+      var t = calcTotals(cart);
+      var html = '';
+      html += '<div class="summary-row"><span>Subtotal</span><span class="val">₹' + t.subtotal + '</span></div>';
+      html += '<div class="summary-row"><span>Delivery fee</span><span class="val">' + (t.deliveryFee === 0 ? 'FREE' : '₹' + t.deliveryFee) + '</span></div>';
+      html += '<div class="summary-row"><span>Taxes & charges</span><span class="val">₹' + t.tax + '</span></div>';
+      html += '<div class="summary-row total"><span>Total</span><span class="val">₹' + t.total + '</span></div>';
+      document.getElementById('summary_box').innerHTML = html;
+      var btn = document.getElementById('place_order_btn');
+      btn.textContent = paymentMethod === 'upi' ? ('Pay ₹' + t.total + ' via UPI') : ('Place order · ₹' + t.total + ' (COD)');
     }
 
-    function buildUpiLink(amount, ticketNo) {
-      const note = encodeURIComponent(`Order #${ticketNo} - ${UPI_PAYEE_NAME}`);
-      return `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(UPI_PAYEE_NAME)}&am=${amount}&cu=INR&tn=${note}`;
+    function buildUpiLink(amount, note) {
+      return 'upi://pay?pa=' + encodeURIComponent(UPI_ID) + '&pn=' + encodeURIComponent(UPI_PAYEE_NAME) + '&am=' + amount + '&cu=INR&tn=' + encodeURIComponent(note);
     }
 
-    async function placeOrder() {
-      const errorEl = document.getElementById('form_error');
+    function validateForm() {
+      var errorEl = document.getElementById('form_error');
       errorEl.textContent = '';
+      var cart = getCart();
+      if (cart.length === 0) { errorEl.textContent = 'Your cart is empty.'; return null; }
+      var name = document.getElementById('f_name').value.trim();
+      var phone = document.getElementById('f_phone').value.trim();
+      var address = document.getElementById('f_address').value.trim();
+      var notes = document.getElementById('f_notes').value.trim();
+      if (!name || !phone) { errorEl.textContent = 'Please enter your name and phone number.'; return null; }
+      if (orderType === 'delivery' && !address) { errorEl.textContent = 'Please enter a delivery address.'; return null; }
+      return { cart: cart, name: name, phone: phone, address: address, notes: notes };
+    }
 
-      const cart = getCart();
-      if (cart.length === 0) {
-        errorEl.textContent = 'Your cart is empty.';
-        return;
+    function handleMainButton() {
+      if (paymentMethod === 'cod') {
+        placeOrder('cod');
+      } else {
+        startUpiPayment();
       }
+    }
 
-      const name = document.getElementById('f_name').value.trim();
-      const phone = document.getElementById('f_phone').value.trim();
-      const address = document.getElementById('f_address').value.trim();
-      const notes = document.getElementById('f_notes').value.trim();
+    function startUpiPayment() {
+      var form = validateForm();
+      if (!form) return;
+      var t = calcTotals(form.cart);
 
-      if (!name || !phone) {
-        errorEl.textContent = 'Please enter your name and phone number.';
-        return;
-      }
-      if (orderType === 'delivery' && !address) {
-        errorEl.textContent = 'Please enter a delivery address.';
-        return;
-      }
+      var pending = {
+        cart: form.cart, name: form.name, phone: form.phone, address: form.address,
+        notes: form.notes, orderType: orderType, totals: t, createdAt: Date.now()
+      };
+      localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
 
-      const t = calcTotals(cart);
-      const btn = document.getElementById('place_order_btn');
+      var upiLink = buildUpiLink(t.total, 'Order for ' + UPI_PAYEE_NAME);
+      window.location.href = upiLink;
+    }
+
+    function showPaymentConfirmScreen(pending) {
+      var html = '';
+      html += '<div style="text-align:center; padding:30px 0;">';
+      html += '<h2 style="margin-bottom:10px;">Did your payment go through?</h2>';
+      html += '<p style="color:var(--ink); margin-bottom:20px;">You were sent to your UPI app to pay <strong>₹' + pending.totals.total + '</strong>. Only confirm if the payment actually completed.</p>';
+      html += '<button class="btn" style="width:100%; margin-bottom:10px;" onclick="confirmPaymentSuccess()">✅ Yes, payment completed — place order</button>';
+      html += '<button class="btn btn-secondary" style="width:100%; background:transparent; border:1px solid var(--line); color:var(--ink);" onclick="retryPayment()">🔁 Try paying again</button>';
+      html += '<br><br>';
+      html += '<button style="background:none; border:none; color:var(--ink-light); font-size:13px; text-decoration:underline;" onclick="cancelPendingUpi()">Cancel and edit order</button>';
+      html += '</div>';
+      document.getElementById('checkout_wrap').innerHTML = html;
+      var bar = document.querySelector('.sticky-bar');
+      if (bar) bar.style.display = 'none';
+    }
+
+    function retryPayment() {
+      var pending = JSON.parse(localStorage.getItem(PENDING_KEY));
+      var upiLink = buildUpiLink(pending.totals.total, 'Order for ' + UPI_PAYEE_NAME);
+      window.location.href = upiLink;
+    }
+
+    function cancelPendingUpi() {
+      localStorage.removeItem(PENDING_KEY);
+      window.location.reload();
+    }
+
+    function confirmPaymentSuccess() {
+      var pending = JSON.parse(localStorage.getItem(PENDING_KEY));
+      if (!pending) return;
+      insertOrder(pending.cart, pending.name, pending.phone, pending.address, pending.notes, pending.orderType, 'upi', pending.totals, true);
+      localStorage.removeItem(PENDING_KEY);
+    }
+
+    function placeOrder(method) {
+      var form = validateForm();
+      if (!form) return;
+      var t = calcTotals(form.cart);
+      var btn = document.getElementById('place_order_btn');
       btn.textContent = 'Placing order…';
       btn.disabled = true;
+      insertOrder(form.cart, form.name, form.phone, form.address, form.notes, orderType, method, t, false);
+    }
 
-      const { data, error } = await supabaseClient.from('orders').insert({
-        items: cart.map(c => ({ menu_item_id: c.id, name: c.name, price: c.price, qty: c.qty, is_veg: c.is_veg })),
+    function insertOrder(cart, name, phone, address, notes, orderTypeVal, method, t, paymentConfirmedByCustomer) {
+      var errorEl = document.getElementById('form_error');
+      var items = cart.map(function (c) {
+        return { menu_item_id: c.id, name: c.name, price: c.price, qty: c.qty, is_veg: c.is_veg };
+      });
+      var finalNotes = notes;
+      if (paymentConfirmedByCustomer) {
+        finalNotes = notes ? (notes + ' [Customer confirmed UPI payment]') : '[Customer confirmed UPI payment]';
+      }
+      supabaseClient.from('orders').insert({
+        items: items,
         customer_name: name,
         phone: phone,
-        address: orderType === 'delivery' ? address : null,
-        notes: notes,
-        order_type: orderType,
-        payment_method: paymentMethod,
+        address: orderTypeVal === 'delivery' ? address : null,
+        notes: finalNotes,
+        order_type: orderTypeVal,
+        payment_method: method,
         subtotal: t.subtotal,
         delivery_fee: t.deliveryFee,
         tax: t.tax,
         total: t.total,
-        status: 'placed',
-      }).select().single();
-
-      if (error) {
-        errorEl.textContent = error.message;
-        renderSummary();
-        btn.disabled = false;
-        return;
-      }
-
-      setCart([]);
-
-      if (paymentMethod === 'upi') {
-        const upiLink = buildUpiLink(t.total, data.ticket_no);
-        showConfirmation(data, upiLink);
-        window.location.href = upiLink;
-      } else {
-        showConfirmation(data, null);
-      }
-    }
-
-    function showConfirmation(order, upiLink) {
-      document.getElementById('checkout_wrap').innerHTML = `
-        <div style="text-align:center; padding:30px 0;">
-          <h2 style="margin-bottom:10px;">Order placed! 🎉</h2>
-          <p style="color:var(--ink); margin-bottom:20px;">
-            ${upiLink
-              ? `Complete your ₹${order.total} payment in your UPI app. If it didn't open automatically, tap below.`
-              : `The kitchen has your order. You'll pay ₹${order.total} on ${order.order_type === 'pickup' ? 'pickup' : 'delivery'}.`}
-          </p>
-          <div class="ticket-box">
-            <div class="num">#${order.ticket_no}</div>
-            <p style="font-size:13px; color:var(--ink-light); margin-top:6px;">Your order number</p>
-          </div>
-          ${upiLink ? `<a href="${upiLink}" class="btn" style="display:inline-block; margin-top:20px;">Open UPI app to pay ₹${order.total}</a>` : ''}
-          <br>
-          <a href="menu.html" style="display:inline-block; margin-top:16px; color:var(--ink); font-size:14px;">Order something else</a>
-        </div>
-      `;
-      document.querySelector('.sticky-bar').style.display = 'none';
-    }
-
-    async function init() {
-      const { data: r } = await supabaseClient.from('restaurant').select('*').eq('id', 1).single();
-      restaurantSettings = r;
-      if (r) {
-        document.getElementById('nav_name').textContent = r.name;
-        if (r.logo_url) {
-          const logo = document.getElementById('nav_logo');
-          logo.src = r.logo_url;
-          logo.style.display = 'block';
+        status: 'placed'
+      }).select().single().then(function (result) {
+        if (result.error) {
+          if (errorEl) errorEl.textContent = result.error.message;
+          return;
         }
+        setCart([]);
+        showConfirmation(result.data);
+      });
+    }
+
+    function showConfirmation(order) {
+      var html = '';
+      html += '<div style="text-align:center; padding:30px 0;">';
+      html += '<h2 style="margin-bottom:10px;">Order placed! 🎉</h2>';
+      if (order.payment_method === 'upi') {
+        html += '<p style="color:var(--ink); margin-bottom:20px;">Payment confirmed. The kitchen has your order.</p>';
+      } else {
+        html += '<p style="color:var(--ink); margin-bottom:20px;">The kitchen has your order. You will pay ₹' + order.total + ' on ' + (order.order_type === 'pickup' ? 'pickup' : 'delivery') + '.</p>';
       }
-      const cart = getCart();
-      if (cart.length === 0) {
-        document.getElementById('checkout_wrap').innerHTML = '<p class="empty-note">Your cart is empty. <a href="menu.html" style="color:var(--ember); font-weight:600;">Browse the menu →</a></p>';
-        document.querySelector('.sticky-bar').style.display = 'none';
-        return;
-      }
-      renderSummary();
+      html += '<div class="ticket-box"><div class="num">#' + order.ticket_no + '</div><p style="font-size:13px; color:var(--ink-light); margin-top:6px;">Your order number</p></div>';
+      html += '<a href="menu.html" class="btn" style="display:inline-block; margin-top:24px;">Order something else</a>';
+      html += '</div>';
+      document.getElementById('checkout_wrap').innerHTML = html;
+      var bar = document.querySelector('.sticky-bar');
+      if (bar) bar.style.display = 'none';
+    }
+
+    function init() {
+      supabaseClient.from('restaurant').select('*').eq('id', 1).single().then(function (result) {
+        restaurantSettings = result.data;
+        if (result.data) {
+          document.getElementById('nav_name').textContent = result.data.name;
+          if (result.data.logo_url) {
+            var logo = document.getElementById('nav_logo');
+            logo.src = result.data.logo_url;
+            logo.style.display = 'block';
+          }
+        }
+
+        var pendingRaw = localStorage.getItem(PENDING_KEY);
+        if (pendingRaw) {
+          showPaymentConfirmScreen(JSON.parse(pendingRaw));
+          return;
+        }
+
+        var cart = getCart();
+        if (cart.length === 0) {
+          document.getElementById('checkout_wrap').innerHTML = '<p class="empty-note">Your cart is empty. <a href="menu.html" style="color:var(--ember); font-weight:600;">Browse the menu →</a></p>';
+          var bar = document.querySelector('.sticky-bar');
+          if (bar) bar.style.display = 'none';
+          return;
+        }
+        renderSummary();
+      });
     }
 
     init();
